@@ -170,6 +170,42 @@ def test_malformed_sync_response_maps_to_network_error() -> None:
         client.sync.from_url(url="https://example.com")
 
 
+@pytest.mark.parametrize(
+    ("status_value", "is_async_value"),
+    [
+        ("FAILURE", False),
+        ("SUCCESS", True),
+    ],
+)
+@responses.activate
+def test_sync_response_requires_success_status_and_non_async_flag(
+    status_value: str,
+    is_async_value: bool,
+) -> None:
+    responses.add(
+        responses.POST,
+        f"{BASE_URL}/v1/sync",
+        json={
+            "requestId": "req_123",
+            "status": status_value,
+            "errorCode": None,
+            "errorMessage": None,
+            "documentUrl": "https://example.com/file.pdf",
+            "expiresAt": "2026-06-12T00:00:00Z",
+            "isAsync": is_async_value,
+            "duration": 584,
+            "documentSizeMb": 0.02,
+            "isCustomS3Bucket": False,
+        },
+        status=200,
+    )
+
+    client = PDFBolt(api_key=API_KEY, base_url=BASE_URL)
+
+    with pytest.raises(PDFBoltNetworkError, match="malformed sync conversion response"):
+        client.sync.from_url(url="https://example.com")
+
+
 @responses.activate
 def test_async_request_maps_options_and_keeps_request_timeout_out_of_body() -> None:
     responses.add(
@@ -419,6 +455,21 @@ def test_webhook_schema_errors_map_to_webhook_error() -> None:
         b'"expiresAt":"2026-06-12T00:00:00Z","isAsync":true,'
         b'"duration":100,"documentSizeMb":0.01,"isCustomS3Bucket":false}'
     )
+    digest = hmac.new(b"secret", raw_body, hashlib.sha256).hexdigest()
+    signature = f"sha256={digest}"
+
+    with pytest.raises(PDFBoltWebhookSignatureError, match="Invalid PDFBolt webhook payload"):
+        webhooks.verify_and_parse(raw_body=raw_body, signature=signature, secret="secret")
+
+
+@pytest.mark.parametrize(
+    "raw_body",
+    [
+        b'{"requestId":"req_123","status":"PENDING","errorCode":null,"errorMessage":null,"documentUrl":"https://example.com/file.pdf","expiresAt":"2026-06-12T00:00:00Z","isAsync":true,"duration":100,"documentSizeMb":0.01,"isCustomS3Bucket":false}',
+        b'{"requestId":"req_123","status":"SUCCESS","errorCode":null,"errorMessage":null,"documentUrl":"https://example.com/file.pdf","expiresAt":"2026-06-12T00:00:00Z","isAsync":false,"duration":100,"documentSizeMb":0.01,"isCustomS3Bucket":false}',
+    ],
+)
+def test_webhook_payload_requires_final_status_and_async_flag(raw_body: bytes) -> None:
     digest = hmac.new(b"secret", raw_body, hashlib.sha256).hexdigest()
     signature = f"sha256={digest}"
 

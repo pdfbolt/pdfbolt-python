@@ -2,7 +2,7 @@
 
 Official Python SDK for the PDFBolt API.
 
-PDFBolt generates PDFs from HTTPS URLs, raw HTML, and published templates. See the [PDFBolt docs](https://pdfbolt.com/docs) and [OpenAPI reference](https://pdfbolt.com/docs/api-reference) for the full REST API. The SDK is typed, uses `requests`, and is intended for server-side Python applications.
+PDFBolt generates PDFs from HTTPS URLs, raw HTML, and published templates. See the [PDFBolt docs](https://pdfbolt.com/docs) and [OpenAPI reference](https://pdfbolt.com/docs/api-reference) for the full REST API. The SDK is typed, uses `requests`, and is intended for server-side Python applications. Typed request dictionaries and keyword options are exported for type-aware editors and static checkers.
 
 ## Installation
 
@@ -359,17 +359,18 @@ PDFBoltValidationError
 PDFBoltConfigurationError
 ```
 
-Typed model exports include direct, sync, async job, webhook event, usage, and rate-limit result classes.
+Typed request exports include conversion options, direct/sync/async request dictionaries, webhook event types, cookies, margins, dimensions, and other REST API parameter types. Typed model exports include direct, sync, async job, webhook event, usage, and rate-limit result classes.
 
 ## Development
 
 ```bash
 python -m pip install -e ".[dev]"
 ruff check .
-mypy src
+mypy src tests/typecheck_usage.py
 pytest
 python -m build
 twine check dist/*
+python scripts/test_pack.py
 ```
 
 ## Examples

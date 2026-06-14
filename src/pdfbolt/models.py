@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
+
+from .types import AsyncConversionWebhookStatus, ConversionErrorCode, SyncConversionStatus
 
 
 @dataclass(frozen=True)
@@ -20,12 +22,12 @@ class RateLimitInfo:
 @dataclass(frozen=True)
 class SyncConversionResult:
     request_id: str
-    status: str
-    error_code: str | None
+    status: SyncConversionStatus
+    error_code: ConversionErrorCode | None
     error_message: str | None
     document_url: str | None
     expires_at: str | None
-    is_async: bool
+    is_async: Literal[False]
     duration: int | float | None
     document_size_mb: int | float | None
     is_custom_s3_bucket: bool | None
@@ -42,12 +44,12 @@ class AsyncConversionJob:
 @dataclass(frozen=True)
 class AsyncConversionWebhookEvent:
     request_id: str
-    status: str
-    error_code: str | None
+    status: AsyncConversionWebhookStatus
+    error_code: ConversionErrorCode | None
     error_message: str | None
     document_url: str | None
     expires_at: str | None
-    is_async: bool
+    is_async: Literal[True]
     duration: int | float | None
     document_size_mb: int | float | None
     is_custom_s3_bucket: bool | None
@@ -84,12 +86,12 @@ def sync_conversion_result_from_api(
 ) -> SyncConversionResult:
     return SyncConversionResult(
         request_id=_required_str_field(data, "requestId", "sync conversion"),
-        status=_required_str_field(data, "status", "sync conversion"),
+        status=_required_sync_status_field(data, "status", "sync conversion"),
         error_code=_required_nullable_str_field(data, "errorCode", "sync conversion"),
         error_message=_required_nullable_str_field(data, "errorMessage", "sync conversion"),
         document_url=_required_nullable_str_field(data, "documentUrl", "sync conversion"),
         expires_at=_required_nullable_str_field(data, "expiresAt", "sync conversion"),
-        is_async=_required_bool_field(data, "isAsync", "sync conversion"),
+        is_async=_required_false_field(data, "isAsync", "sync conversion"),
         duration=_required_nullable_number_field(data, "duration", "sync conversion"),
         document_size_mb=_required_nullable_number_field(data, "documentSizeMb", "sync conversion"),
         is_custom_s3_bucket=_required_nullable_bool_field(
@@ -114,12 +116,12 @@ def async_conversion_job_from_api(
 def webhook_event_from_api(data: dict[str, Any]) -> AsyncConversionWebhookEvent:
     return AsyncConversionWebhookEvent(
         request_id=_required_str_field(data, "requestId", "webhook payload"),
-        status=_required_str_field(data, "status", "webhook payload"),
+        status=_required_webhook_status_field(data, "status", "webhook payload"),
         error_code=_required_nullable_str_field(data, "errorCode", "webhook payload"),
         error_message=_required_nullable_str_field(data, "errorMessage", "webhook payload"),
         document_url=_required_nullable_str_field(data, "documentUrl", "webhook payload"),
         expires_at=_required_nullable_str_field(data, "expiresAt", "webhook payload"),
-        is_async=_required_bool_field(data, "isAsync", "webhook payload"),
+        is_async=_required_true_field(data, "isAsync", "webhook payload"),
         duration=_required_nullable_number_field(data, "duration", "webhook payload"),
         document_size_mb=_required_nullable_number_field(data, "documentSizeMb", "webhook payload"),
         is_custom_s3_bucket=_required_nullable_bool_field(
@@ -212,6 +214,48 @@ def _required_bool_field(data: dict[str, Any], key: str, context: str) -> bool:
         raise ValueError(f"Malformed PDFBolt {context} response: {key} must be a boolean.")
 
     return value
+
+
+def _required_false_field(data: dict[str, Any], key: str, context: str) -> Literal[False]:
+    value = _required_bool_field(data, key, context)
+    if value is not False:
+        raise ValueError(f"Malformed PDFBolt {context} response: {key} must be false.")
+
+    return False
+
+
+def _required_true_field(data: dict[str, Any], key: str, context: str) -> Literal[True]:
+    value = _required_bool_field(data, key, context)
+    if value is not True:
+        raise ValueError(f"Malformed PDFBolt {context} response: {key} must be true.")
+
+    return True
+
+
+def _required_sync_status_field(
+    data: dict[str, Any],
+    key: str,
+    context: str,
+) -> SyncConversionStatus:
+    value = _required_str_field(data, key, context)
+    if value != "SUCCESS":
+        raise ValueError(f"Malformed PDFBolt {context} response: {key} must be SUCCESS.")
+
+    return "SUCCESS"
+
+
+def _required_webhook_status_field(
+    data: dict[str, Any],
+    key: str,
+    context: str,
+) -> AsyncConversionWebhookStatus:
+    value = _required_str_field(data, key, context)
+    if value == "SUCCESS":
+        return "SUCCESS"
+    if value == "FAILURE":
+        return "FAILURE"
+
+    raise ValueError(f"Malformed PDFBolt {context} response: {key} must be SUCCESS or FAILURE.")
 
 
 def _required_nullable_str_field(
