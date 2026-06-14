@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Unpack, cast
 
 from .._utils import (
     encode_base64,
@@ -16,14 +16,15 @@ from ..errors import PDFBoltNetworkError
 from ..http import PDFBoltHttpClient
 from ..models import SyncConversionResult, sync_conversion_result_from_api
 from ..rate_limit import read_number_header, read_rate_limit_info
+from ..types import SyncConvertParams, SyncOptions
 
 
 class SyncResource:
     def __init__(self, http: PDFBoltHttpClient) -> None:
         self._http = http
 
-    def convert(self, params: Mapping[str, Any]) -> SyncConversionResult:
-        body, request_timeout = split_request_options(params)
+    def convert(self, params: SyncConvertParams) -> SyncConversionResult:
+        body, request_timeout = split_request_options(cast(Mapping[str, Any], params))
         data, headers = self._http.request_json(
             "POST",
             "/v1/sync",
@@ -41,21 +42,24 @@ class SyncResource:
                 "PDFBolt API returned a malformed sync conversion response."
             ) from error
 
-    def from_url(self, *, url: str, **params: Any) -> SyncConversionResult:
-        body = merge_params({"url": url}, params)
+    def from_url(self, *, url: str, **params: Unpack[SyncOptions]) -> SyncConversionResult:
+        body = merge_params({"url": url}, cast(Mapping[str, Any], params))
         require_string_field(body, "url", "sync.from_url")
-        return self.convert(encode_header_footer_templates(body))
+        return self.convert(cast(SyncConvertParams, encode_header_footer_templates(body)))
 
-    def from_html(self, *, html: str, **params: Any) -> SyncConversionResult:
-        body = merge_params({"html": html}, params)
+    def from_html(self, *, html: str, **params: Unpack[SyncOptions]) -> SyncConversionResult:
+        body = merge_params({"html": html}, cast(Mapping[str, Any], params))
         html_value = require_string_field(body, "html", "sync.from_html")
         return self.convert(
-            encode_header_footer_templates(
-                {
-                    **body,
-                    "html": encode_base64(html_value),
-                }
-            )
+            cast(
+                SyncConvertParams,
+                encode_header_footer_templates(
+                    {
+                        **body,
+                        "html": encode_base64(html_value),
+                    }
+                ),
+            ),
         )
 
     def from_template(
@@ -63,15 +67,15 @@ class SyncResource:
         *,
         template_id: str,
         template_data: Mapping[str, Any],
-        **params: Any,
+        **params: Unpack[SyncOptions],
     ) -> SyncConversionResult:
         body = merge_params(
             {
                 "template_id": template_id,
                 "template_data": template_data,
             },
-            params,
+            cast(Mapping[str, Any], params),
         )
         require_string_field(body, "template_id", "sync.from_template")
         require_object_field(body, "template_data", "sync.from_template")
-        return self.convert(encode_header_footer_templates(body))
+        return self.convert(cast(SyncConvertParams, encode_header_footer_templates(body)))
