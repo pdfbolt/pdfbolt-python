@@ -21,6 +21,7 @@ from pdfbolt import (
     PDFBoltWebhookSignatureError,
     webhooks,
 )
+from pdfbolt.types import AsyncOptions, ConversionOptions, DirectOptions, SyncOptions
 
 BASE_URL = "https://api.test.pdfbolt.local"
 API_KEY = "test-api-key"
@@ -274,6 +275,253 @@ def test_conversion_option_acronyms_map_to_api_field_names() -> None:
     assert body["applyExtraHTTPHeadersToAllResources"] is True
     assert "extraHttpHeaders" not in body
     assert "applyExtraHttpHeadersToAllResources" not in body
+
+
+@responses.activate
+def test_nested_conversion_options_map_to_api_field_names() -> None:
+    responses.add(
+        responses.POST,
+        f"{BASE_URL}/v1/direct",
+        body=b"%PDF-test",
+        headers={"content-type": "application/pdf"},
+        status=200,
+    )
+
+    client = PDFBolt(api_key=API_KEY, base_url=BASE_URL)
+    client.direct.from_url(
+        url="https://example.com",
+        http_credentials={"username": "user", "password": "pass"},
+        cookies=[
+            {
+                "name": "session",
+                "value": "abc",
+                "url": "https://example.com",
+                "http_only": True,
+                "secure": True,
+            }
+        ],
+    )
+
+    body = json.loads(responses.calls[0].request.body.decode("utf-8"))
+    assert body["httpCredentials"] == {"username": "user", "password": "pass"}
+    assert body["cookies"] == [
+        {
+            "name": "session",
+            "value": "abc",
+            "url": "https://example.com",
+            "httpOnly": True,
+            "secure": True,
+        }
+    ]
+    assert "http_credentials" not in body
+    assert "http_only" not in body["cookies"][0]
+
+
+@responses.activate
+def test_all_snake_case_request_options_map_to_api_field_names() -> None:
+    responses.add(
+        responses.POST,
+        f"{BASE_URL}/v1/direct",
+        body=b"%PDF-test",
+        headers={"content-type": "application/pdf"},
+        status=200,
+    )
+    responses.add(
+        responses.POST,
+        f"{BASE_URL}/v1/sync",
+        json={
+            "requestId": "sync_123",
+            "status": "SUCCESS",
+            "errorCode": None,
+            "errorMessage": None,
+            "documentUrl": None,
+            "expiresAt": None,
+            "isAsync": False,
+            "duration": 584,
+            "documentSizeMb": 0.02,
+            "isCustomS3Bucket": True,
+        },
+        status=200,
+    )
+    responses.add(
+        responses.POST,
+        f"{BASE_URL}/v1/async",
+        json={"requestId": "async_123"},
+        status=200,
+    )
+
+    conversion_options = {
+        "emulate_media_type": "screen",
+        "java_script_enabled": False,
+        "http_credentials": {"username": "user", "password": "pass"},
+        "viewport_size": {"width": 1280, "height": 720},
+        "is_mobile": True,
+        "device_scale_factor": 2,
+        "extra_http_headers": {"X-Test": "ok"},
+        "apply_extra_http_headers_to_all_resources": False,
+        "cookies": [
+            {
+                "name": "session",
+                "value": "abc",
+                "url": "https://example.com",
+                "expires": 1781600000,
+                "http_only": True,
+                "secure": False,
+            },
+            {
+                "name": "prefs",
+                "value": "dark",
+                "domain": "example.com",
+                "path": "/",
+                "http_only": False,
+                "secure": True,
+            },
+        ],
+        "wait_until": "networkidle",
+        "wait_for_function": "() => window.ready === true",
+        "wait_for_selector": {"selector": "#ready", "state": "visible"},
+        "timeout": 30000,
+        "format": "A4",
+        "landscape": True,
+        "width": "210mm",
+        "height": "297mm",
+        "margin": {
+            "top": "10mm",
+            "right": 0,
+            "bottom": "10mm",
+            "left": "0",
+        },
+        "page_ranges": "1-2",
+        "prefer_css_page_size": True,
+        "print_background": True,
+        "scale": 0.75,
+        "display_header_footer": True,
+        "header_template": "<div>Header</div>",
+        "footer_template": "<div>Footer</div>",
+        "tagged": True,
+        "print_production": {
+            "pdf_standard": "pdf-x-4",
+            "color_space": "cmyk",
+            "icc_profile": "fogra39",
+            "preserve_black": True,
+        },
+        "content_disposition": "attachment",
+        "filename": "invoice.pdf",
+        "compression": "high",
+        "request_timeout": 30,
+    }
+    expected_conversion_option_keys = set(conversion_options)
+    assert set(ConversionOptions.__annotations__) == expected_conversion_option_keys
+    assert set(DirectOptions.__annotations__) == expected_conversion_option_keys | {"is_encoded"}
+    assert set(SyncOptions.__annotations__) == expected_conversion_option_keys | {
+        "custom_s3_presigned_url"
+    }
+    assert set(AsyncOptions.__annotations__) == expected_conversion_option_keys | {
+        "additional_webhook_headers",
+        "custom_s3_presigned_url",
+        "retry_delays",
+    }
+
+    client = PDFBolt(api_key=API_KEY, base_url=BASE_URL)
+    client.direct.from_url(
+        url="https://example.com",
+        is_encoded=True,
+        **conversion_options,
+    )
+    client.sync.from_url(
+        url="https://example.com",
+        custom_s3_presigned_url="https://storage.example.com/out.pdf?signature=test",
+        request_timeout=30,
+    )
+    client.async_conversions.from_url(
+        url="https://example.com",
+        webhook="https://example.com/webhook",
+        custom_s3_presigned_url="https://storage.example.com/async.pdf?signature=test",
+        additional_webhook_headers={"X-Trace-Id": "trace_123"},
+        retry_delays=[5, 15, 60],
+        request_timeout=30,
+    )
+
+    direct_body = json.loads(responses.calls[0].request.body.decode("utf-8"))
+    sync_body = json.loads(responses.calls[1].request.body.decode("utf-8"))
+    async_body = json.loads(responses.calls[2].request.body.decode("utf-8"))
+
+    assert direct_body == {
+        "url": "https://example.com",
+        "emulateMediaType": "screen",
+        "javaScriptEnabled": False,
+        "httpCredentials": {"username": "user", "password": "pass"},
+        "viewportSize": {"width": 1280, "height": 720},
+        "isMobile": True,
+        "deviceScaleFactor": 2,
+        "extraHTTPHeaders": {"X-Test": "ok"},
+        "applyExtraHTTPHeadersToAllResources": False,
+        "cookies": [
+            {
+                "name": "session",
+                "value": "abc",
+                "url": "https://example.com",
+                "expires": 1781600000,
+                "httpOnly": True,
+                "secure": False,
+            },
+            {
+                "name": "prefs",
+                "value": "dark",
+                "domain": "example.com",
+                "path": "/",
+                "httpOnly": False,
+                "secure": True,
+            },
+        ],
+        "waitUntil": "networkidle",
+        "waitForFunction": "() => window.ready === true",
+        "waitForSelector": {"selector": "#ready", "state": "visible"},
+        "timeout": 30000,
+        "format": "A4",
+        "landscape": True,
+        "width": "210mm",
+        "height": "297mm",
+        "margin": {
+            "top": "10mm",
+            "right": 0,
+            "bottom": "10mm",
+            "left": "0",
+        },
+        "pageRanges": "1-2",
+        "preferCssPageSize": True,
+        "printBackground": True,
+        "scale": 0.75,
+        "displayHeaderFooter": True,
+        "headerTemplate": base64.b64encode(b"<div>Header</div>").decode("ascii"),
+        "footerTemplate": base64.b64encode(b"<div>Footer</div>").decode("ascii"),
+        "tagged": True,
+        "printProduction": {
+            "pdfStandard": "pdf-x-4",
+            "colorSpace": "cmyk",
+            "iccProfile": "fogra39",
+            "preserveBlack": True,
+        },
+        "contentDisposition": "attachment",
+        "filename": "invoice.pdf",
+        "compression": "high",
+        "isEncoded": True,
+    }
+    assert sync_body == {
+        "url": "https://example.com",
+        "customS3PresignedUrl": "https://storage.example.com/out.pdf?signature=test",
+    }
+    assert async_body == {
+        "url": "https://example.com",
+        "webhook": "https://example.com/webhook",
+        "customS3PresignedUrl": "https://storage.example.com/async.pdf?signature=test",
+        "additionalWebhookHeaders": {"X-Trace-Id": "trace_123"},
+        "retryDelays": [5, 15, 60],
+    }
+
+    for body in (direct_body, sync_body, async_body):
+        assert "request_timeout" not in body
+        assert "requestTimeout" not in body
 
 
 @responses.activate

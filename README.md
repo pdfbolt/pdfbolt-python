@@ -32,6 +32,14 @@ print(f"Using PDFBolt SDK {VERSION}")
 print(f"Saved {pdf.size} bytes")
 ```
 
+Python SDK options use `snake_case` and are mapped to PDFBolt REST API fields:
+
+- `print_background` -> `printBackground`
+- `custom_s3_presigned_url` -> `customS3PresignedUrl`
+- `extra_http_headers` -> `extraHTTPHeaders`
+
+`template_data` keys are sent unchanged, so they continue to match your template variables exactly.
+
 ## Convert a URL to PDF
 
 Use `from_url()` when you want PDFBolt to load an HTTPS page and render it as a PDF.
@@ -77,7 +85,7 @@ See the [`headerTemplate`](https://pdfbolt.com/docs/parameters#headertemplate) a
 
 ```python
 pdf = pdfbolt.direct.from_html(
-    html="<h1>Invoice</h1>",
+    html="<!doctype html><html><body><h1>Invoice</h1></body></html>",
     display_header_footer=True,
     header_template='<div style="font-size:9px;width:100%;text-align:center;">Invoice</div>',
     footer_template='<div style="font-size:9px;width:100%;text-align:center;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>',
@@ -138,7 +146,7 @@ Direct, Sync, Async job, and Usage results expose parsed rate-limit values throu
 
 ## Get a Temporary URL
 
-Use `pdfbolt.sync` when you want PDFBolt to generate the document and return a temporary download URL.
+Use `pdfbolt.sync` when you want PDFBolt to generate the document and return a temporary download URL, valid for 24 hours.
 
 ```python
 result = pdfbolt.sync.from_url(url="https://example.com")
@@ -153,7 +161,7 @@ print(result.rate_limit.minute.remaining)
 print(result.conversion_cost)
 ```
 
-For custom S3 uploads, pass a valid presigned URL. PDFBolt uploads the generated PDF to your S3-compatible bucket, so `document_url` and `expires_at` are `None`.
+For custom S3 uploads, pass a valid presigned URL. PDFBolt uploads the generated PDF to your S3-compatible bucket, so `document_url` and `expires_at` are `None`. Custom S3 uploads are available on paid plans.
 
 ```python
 result = pdfbolt.sync.from_html(
@@ -165,9 +173,7 @@ print(result.is_custom_s3_bucket)  # True
 print(result.document_url)  # None
 ```
 
-Presigned URLs are usually time-limited and often single-use. Generate a new HTTPS presigned PUT URL for each conversion. Do not commit presigned URLs; they grant temporary write access. If your URL signs `Content-Type` or `Content-Disposition`, the PDFBolt upload request must send matching values. When possible, sign only the `host` header to avoid signature mismatches.
-
-See [Uploading to Your S3 Bucket](https://pdfbolt.com/docs/s3-bucket-upload) for setup details.
+Presigned URLs are usually time-limited and often single-use. Generate a new one for each conversion. See [Uploading to Your S3 Bucket](https://pdfbolt.com/docs/s3-bucket-upload) for setup details.
 
 ## Run an Async Conversion
 
@@ -191,6 +197,8 @@ For async custom S3 uploads, pass a valid `custom_s3_presigned_url` in the async
 ## Verify Webhook Signatures
 
 Use the exact raw request body received from your framework. Do not parse and re-serialize JSON before verification. Supported raw body types are `str`, `bytes`, `bytearray`, and `memoryview`.
+
+For Flask, use `request.get_data()` as the raw body. For FastAPI or Starlette, use `await request.body()`.
 
 The `secret` value is your PDFBolt webhook signature key, not your API key.
 
@@ -291,7 +299,7 @@ pdfbolt = PDFBolt(
 
 The SDK does not automatically retry failed requests. One SDK method call sends at most one HTTP request. For async conversion retries handled by PDFBolt, use the `retry_delays` conversion parameter.
 
-`request_timeout` is the SDK HTTP timeout in seconds. The conversion `timeout` option is different: it is sent to the PDFBolt API and controls the browser render timeout for the PDF conversion.
+`request_timeout` is the SDK HTTP timeout in seconds. The default is `120.0`. The conversion `timeout` option is different: it is sent to the PDFBolt API in milliseconds and controls the browser render timeout for the PDF conversion, for example `timeout=30000`.
 
 The SDK sends `User-Agent: pdfbolt-python/<version>` on requests to the PDFBolt API. This helps identify SDK traffic for support and debugging. To set headers for the page being rendered by Chromium, use the conversion `extra_http_headers` parameter.
 
@@ -359,85 +367,4 @@ PDFBoltValidationError
 PDFBoltConfigurationError
 ```
 
-Typed request exports include conversion options, direct/sync/async request dictionaries, webhook event types, cookies, margins, dimensions, and other REST API parameter types. Typed model exports include direct, sync, async job, webhook event, usage, and rate-limit result classes.
-
-## Development
-
-```bash
-python -m pip install -e ".[dev]"
-ruff check .
-mypy src tests/typecheck_usage.py
-pytest
-python -m build
-twine check dist/*
-python scripts/test_pack.py
-```
-
-## Examples
-
-Set your API key before running examples:
-
-```bash
-export PDFBOLT_API_KEY="your_api_key_here"
-export PDFBOLT_BASE_URL="https://api.pdfbolt.com"
-```
-
-On Windows PowerShell:
-
-```powershell
-$env:PDFBOLT_API_KEY="your_api_key_here"
-$env:PDFBOLT_BASE_URL="https://api.pdfbolt.com"
-```
-
-Run examples from the project root:
-
-```bash
-python examples/quick_start.py
-python examples/convert_html.py
-python examples/direct_base64.py
-python examples/sync.py
-python examples/error_classes.py
-```
-
-Optional examples:
-
-```bash
-export PDFBOLT_WEBHOOK_URL="https://your-app.com/webhooks/pdfbolt"
-python examples/async_job.py
-
-export PDFBOLT_CUSTOM_S3_PRESIGNED_URL="https://..."
-python examples/sync.py
-
-export PDFBOLT_TEMPLATE_ID="your_template_id"
-export PDFBOLT_TEMPLATE_DATA_JSON='{"invoice_number":"PYTHON-SDK-001","total":"$123.00"}'
-python examples/template.py
-```
-
-Webhook E2E:
-
-```bash
-export PDFBOLT_WEBHOOK_SECRET="your_webhook_signature_secret"
-python examples/webhook_server.py
-```
-
-Expose `http://127.0.0.1:8787` through an HTTPS tunnel and use the public URL as `PDFBOLT_WEBHOOK_URL` before running `examples/async_job.py`.
-
-## Live Tests
-
-Live tests are skipped by default. To run them:
-
-```bash
-export PDFBOLT_RUN_LIVE_TESTS=1
-export PDFBOLT_API_KEY="your_api_key_here"
-export PDFBOLT_BASE_URL="https://api.pdfbolt.com"
-python -m pytest tests/live
-```
-
-Optional live test inputs:
-
-```bash
-export PDFBOLT_WEBHOOK_URL="https://your-app.com/webhooks/pdfbolt"
-export PDFBOLT_TEMPLATE_ID="your_template_id"
-export PDFBOLT_TEMPLATE_DATA_JSON='{"invoice_number":"PYTHON-SDK-001","total":"$123.00"}'
-export PDFBOLT_CUSTOM_S3_PRESIGNED_URL="https://..."
-```
+Typed exports are available for request dictionaries, conversion options, webhook events, result models, rate-limit metadata, cookies, margins, dimensions, and other PDFBolt API parameter types.
